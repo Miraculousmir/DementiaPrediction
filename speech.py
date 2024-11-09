@@ -6,6 +6,7 @@ import pandas as pd
 import liwc
 import re
 from collections import Counter
+import random
 
 
 # Tokenize function (same as before)
@@ -33,45 +34,61 @@ def compute_liwc_categories(speech_text, category_names, parse):
 
 
 def show_page():
-    st.header("Predict with speech data", divider="blue")
-    st.subheader("Cookie Theft Description")
-    st.image("The-Cookie-Theft-picture.png")
+    st.header("Predict with Speech Data", divider="blue")
+    st.subheader("Image Description")
 
-    # Initialize the recognizer
-    recognizer = sr.Recognizer()
+    # Check if the selected image is already in session state
+    if "selected_image" not in st.session_state:
+        # Randomly select a new image only once per session
+        pic_list = ["picture0.jpg", "picture1.jpg", "picture2.jpg", "picture3.jpg"]
+        st.session_state.selected_image = random.choice(pic_list)
 
-    # Record a voice message
-    audio_value = st.experimental_audio_input("Describe the picture",
-                                              help="Press the record button to record your description")
+    # Display the selected image
+    st.image(st.session_state.selected_image)
+
+    # Add dropdown for description method
+    description_method = st.selectbox("Choose a description method:", ("Describe with text", "Describe with audio"))
 
     text = ""
-    if audio_value:
-        # Display the audio player
-        st.audio(audio_value)
+    if description_method == "Describe with text":
+        # Text input for manual description
+        text = st.text_input("Please describe the picture here:")
 
-        # Read the audio data from the UploadedFile object
-        audio_bytes = audio_value.read()  # Read the content as bytes
+    elif description_method == "Describe with audio":
+        # Initialize the recognizer
+        recognizer = sr.Recognizer()
 
-        # Use BytesIO to create a file-like object from the bytes data
-        audio_file_like = io.BytesIO(audio_bytes)
+        # Record a voice message
+        audio_value = st.experimental_audio_input("Describe the picture",
+                                                  help="Press the record button to record your description")
 
-        # Load the audio data from the BytesIO object
-        with sr.AudioFile(audio_file_like) as source:
-            # Adjust for ambient noise (optional)
-            recognizer.adjust_for_ambient_noise(source)
+        if audio_value:
+            # Display the audio player
+            st.audio(audio_value)
 
-            # Record the audio data
-            audio = recognizer.record(source)
+            # Read the audio data from the UploadedFile object
+            audio_bytes = audio_value.read()  # Read the content as bytes
 
-        # Recognize the speech in the audio data
-        try:
-            # Using Google's Web Speech API for recognition
-            text = recognizer.recognize_google(audio)
-            st.write("Transcription: ", text)
-        except sr.UnknownValueError:
-            st.write("Could not understand audio")
-        except sr.RequestError as e:
-            st.write(f"Could not request results from the service; {e}")
+            # Use BytesIO to create a file-like object from the bytes data
+            audio_file_like = io.BytesIO(audio_bytes)
+
+            # Load the audio data from the BytesIO object
+            with sr.AudioFile(audio_file_like) as source:
+                # Adjust for ambient noise (optional)
+                recognizer.adjust_for_ambient_noise(source)
+
+                # Record the audio data
+                audio = recognizer.record(source)
+
+            # Recognize the speech in the audio data
+            try:
+                # Using Google's Web Speech API for recognition
+                text = recognizer.recognize_google(audio)
+                st.write("Transcription: ", text)
+            except sr.UnknownValueError:
+                st.write("Could not understand audio")
+            except sr.RequestError as e:
+                st.write(f"Could not request results from the service; {e}")
 
     # Load LIWC dictionary
     parse, category_names = liwc.load_token_parser('LIWC2007_English.dic')
@@ -87,7 +104,6 @@ def show_page():
         model = pickle.load(f)
 
     if st.button("Predict"):
-
         # Displaying a confirmation message and the entered information
         st.success("Submitted Successfully!")
 
@@ -96,11 +112,17 @@ def show_page():
         # Ensure that liwc_df has the same columns as X_train
         liwc_df = liwc_df.reindex(columns=input_row_format.columns, fill_value=0)
 
-        # Make predictions with the best model
-        y_pred = model.predict(liwc_df)
+        y_prob = model.predict_proba(liwc_df)
+
+        # The output of predict_proba() is an array with two columns:
+        # Column 0: Probability of the class '0' (no dementia)
+        # Column 1: Probability of the class '1' (dementia)
+
+        # To get the probability of dementia (class 1):
+        dementia_prob = y_prob[:, 1]  # This gives the probability of class 1 (dementia)
+
+        # Multiply by 10 and round
+        dementia_prob_rounded = (dementia_prob * 10).round().astype(int)
 
         # Display the prediction result
-        if y_pred == 0:
-            st.write("You do NOT have Dementia")
-        else:
-            st.write("You have Dementia")
+        st.write(f"You have a {dementia_prob_rounded[0]} out of 10 chance of having dementia.")
